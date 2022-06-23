@@ -1,3 +1,4 @@
+# aby dane były jakkolwiek poprawnie przewidywane, niezbędne będzie pobranie danych sprzed minimum dwóch lat!
 # importowanie niezbędnych bibliotek
 import numpy as np
 import pandas_datareader.data as pdr
@@ -29,8 +30,8 @@ with open(json_file_path) as json_file:
 # stock_list = ['TSLA', 'AMZN', 'AAPL', 'META', 'GOOG']
 # możliwe jest też odczytanie z pliku z wykorzystaniem przygotowanej funkcji get_stock_data_from_file(file_path)
 
-def predict_stock_moves_ML(stock_input_array)
-    #możliwe jest przekazanie tylko jednej akcji na raz!!!
+def predict_stock_moves_ML(stock_input_array):
+    # możliwe jest przekazanie tylko jednej akcji na raz!!!
     data = stock_input_array.Close
     dataset = data.values
     # wykorzystanie 80% danych do uczenia maszynowego
@@ -43,9 +44,42 @@ def predict_stock_moves_ML(stock_input_array)
     x_train = []
     y_train = []
     for i in range(60, len(train_data)):
-        x_train.append(train_data[i-60:i, 0])
+        x_train.append(train_data[i - 60:i, 0])
         y_train.append(train_data[i, 0])
-
+    # konwersja x_train oraz y_train na np
+    x_train, y_train = np.array(x_train), np.array(y_train)
+    # przygotowanie macierzy trójwymiarowej (wymagane przez silnik neuronowy LSTM)
+    print(f"Aktualna wielkość danych treningowych wynosi {x_train.shape[0]}x{x_train.shape[1]}")
+    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+    # budowanie modelu
+    model = Sequential()
+    model.add(LSTM(50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+    model.add(LSTM(50, return_sequences=False))
+    model.add(Dense(25))
+    model.add(Dense(1))
+    # kompilowanie modelu
+    model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+    # trenowanie modelu
+    model.fit(x_train, y_train, batch_size=1, epochs=15)
+    model_output_path = config['model_path']
+    model.save(model_output_path, save_format='tf')
+    # utworzenie danych do testowania
+    test_data = scaled_data[training_data_len - 60:, :]
+    # utworzenie x_test oraz y_test
+    x_test = []
+    y_test = dataset[training_data_len:, :]
+    for i in range(60, len(test_data)):
+        x_test.append(test_data[i - 60:i, 0])
+    #konwersja x_test na np
+    x_test = np.array(x_test)
+    # przygotowanie macierzy trójwymiarowej (wymagane przez silnik neuronowy LSTM)
+    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+    #przewidywanie
+    predictions = model.predict(x_test)
+    predictions = scaler.inverse_transform(predictions)
+    #uzyskiwanie RMSE
+    RMSE = np.sqrt(np.mean(predictions - y_test)**2)
+    print(RMSE)
 def get_data_from_yahoo(stock_input_array):
     try:
         stock_data = pdr.get_data_yahoo(stock_input_array, start_time, end_time)

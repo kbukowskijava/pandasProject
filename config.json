@@ -1,1 +1,1 @@
-{"performGraphSave": "Yes", "readDataFromFile": "Yes", "stockFilePath": "stock_names.txt"}
+{"performGraphSave": "Yes", "readDataFromFile": "Yes", "stockFilePath": "stock_names.txt", "model_path": "trained_model"}
