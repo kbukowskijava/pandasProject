@@ -1,4 +1,4 @@
-# aby dane były jakkolwiek poprawnie przewidywane, niezbędne będzie pobranie danych sprzed minimum dwóch lat!
+# aby dane były jakkolwiek poprawnie przewidywane, niezbędne będzie pobranie wartości akcji sprzed minimum dwóch lat!
 # importowanie niezbędnych bibliotek
 import numpy as np
 import pandas_datareader.data as pdr
@@ -70,23 +70,42 @@ def predict_stock_moves_ML(stock_input_array):
     y_test = dataset[training_data_len:, :]
     for i in range(60, len(test_data)):
         x_test.append(test_data[i - 60:i, 0])
-    #konwersja x_test na np
+    # konwersja x_test na np
     x_test = np.array(x_test)
     # przygotowanie macierzy trójwymiarowej (wymagane przez silnik neuronowy LSTM)
     x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
-    #przewidywanie
+    # przewidywanie
     predictions = model.predict(x_test)
     predictions = scaler.inverse_transform(predictions)
-    #uzyskiwanie RMSE
-    RMSE = np.sqrt(np.mean(predictions - y_test)**2)
-    print(RMSE)
+    # uzyskiwanie RMSE
+    RMSE = np.sqrt(np.mean(predictions - y_test) ** 2)
+    print(f"Współczynnik RMSE wynosi: {RMSE}")
+    train = data[:training_data_len]
+    valid = data[training_data_len:]
+    valid['Predictions'] = predictions
+    output = (train, valid)
+    return output
+
+
+def visualize_predicted_data(train, valid):
+    plt.figure()
+    plt.title('Model')
+    plt.xlabel('Date')
+    plt.ylabel('Close price')
+    # TODO: do ogarnięcia wyświetlanie plotów z valid i train, coś nie działa
+    plt.plot(train)
+    plt.plot(valid)
+    plt.legend(['Train', 'Val', 'Predictions'], loc='lower right')
+
+
 def get_data_from_yahoo(stock_input_array):
     try:
         stock_data = pdr.get_data_yahoo(stock_input_array, start_time, end_time)
         return stock_data
-    except RemoteDataError:
+    except RemoteDataError as e:
         file_path_temp = config['stockFilePath']
-        print(f'No data found for {file_path_temp}')
+        print(f'No data found for {file_path_temp}. Exception message: {e}')
+        print(f"Check your internet connection or firewall settings!")
 
 
 def get_stock_data_from_file(file_path):
@@ -117,14 +136,19 @@ def show_graphs(input_data_frame, save_to_files):
         file_name = "graph" + str(count) + ".png"
         plt.savefig(file_name)
         count += 1
-    plt.show()
+    plt.legend(loc='lower right')
 
 
 def main():
+    # pobieranie danych z Yahoo Finances
     data_frame = get_data_from_yahoo(get_stock_data_from_file(config['stockFilePath']))
-    # uzyskiwanie dostępu do danych ze statusem Close
+    # Przygotowywanie wizualizacji pobranych danych
     show_graphs(data_frame, True)
-    predict_stock_moves_ML(data_frame)
+    # Wizualizacja przewidywanego zachowania giełdy na 60 dni do przodu
+    train, valid = predict_stock_moves_ML(data_frame)
+    visualize_predicted_data(train, valid)
+    # Wyświetlenie wykresów
+    plt.show()
 
 
 if __name__ == "__main__":
