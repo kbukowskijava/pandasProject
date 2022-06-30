@@ -1,16 +1,27 @@
 # aby dane były jakkolwiek poprawnie przewidywane, niezbędne będzie pobranie wartości akcji sprzed minimum dwóch lat!
 # importowanie niezbędnych bibliotek
-import numpy as np
-import pandas_datareader.data as pdr
-from pandas_datareader._utils import RemoteDataError
-import pandas as pd
 import datetime as dt
-import matplotlib.pyplot as plt
-import math
-from sklearn.preprocessing import MinMaxScaler
-from keras.models import Sequential
-from keras.layers import Dense, LSTM
 import json
+import math
+import os
+
+import absl.logging
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import pandas_datareader.data as pdr
+import tensorflow as tf
+from keras.layers import Dense, LSTM
+from keras.models import Sequential
+from pandas_datareader._utils import RemoteDataError
+from sklearn.preprocessing import MinMaxScaler
+
+CURRENT_STOCK = ""
+RMSE_VALUES = []
+
+# wyłączenie errorów tensorflow
+absl.logging.set_verbosity(absl.logging.ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 plt.style.use('fivethirtyeight')
 plt.rcParams['font.size'] = 8
@@ -81,7 +92,11 @@ def predict_stock_moves_ML(stock_input_array):
         predictions = scaler.inverse_transform(predictions)
         # uzyskiwanie RMSE - Root Mean Square Error (jest standardowym sposobem pomiaru błędu modelu w przewidywaniu danych ilościowych)
         RMSE = np.sqrt(np.mean(predictions - y_test) ** 2)
+        RMSE_VALUES.append(str("RMSE dla " + CURRENT_STOCK + " = " + str(RMSE)))
         print(f"Współczynnik RMSE wynosi: {RMSE}")
+        list_of_y_test = y_test.tolist()
+        list_of_predictions = predictions.tolist()
+        print_confusion_matrix(flatten_list(list_of_y_test), flatten_list(list_of_predictions))
         train = data[:training_data_len]
         valid = data[training_data_len:]
         valid['Predictions'] = predictions
@@ -89,6 +104,42 @@ def predict_stock_moves_ML(stock_input_array):
         return output
     except Exception as e:
         print(f'Exception message: {e}')
+
+
+def flatten_list(list_to_flatten):
+    flat_list = []
+    # Iteracja po każdym elemencie głównej listy
+    for element in list_to_flatten:
+        if type(element) is list:
+            # Jeśli element jest listą iteruj po elementach tego elementu
+            for item in element:
+                flat_list.append(item)
+        else:
+            flat_list.append(element)
+    return flat_list
+
+
+def print_confusion_matrix(y_true, y_pred):
+    cm = tf.math.confusion_matrix(y_true, y_pred)
+    cm_temp = [cm[0][0], cm[0][1], cm[1][0], cm[1][1]]
+    save_matrix_to_xlsx(cm_temp, config['confusionMatrixSavePath'])
+    print('True positive = ', cm[0][0])
+    print('False positive = ', cm[0][1])
+    print('False negative = ', cm[1][0])
+    print('True negative = ', cm[1][1])
+
+
+def save_matrix_to_xlsx(matrix, savePath):
+    df = pd.DataFrame(matrix).T
+    df.to_excel(excel_writer=str(savePath + CURRENT_STOCK + "_CM.xlsx"))
+
+
+# Zapisanie wszystkich RMSE do pliku
+def save_rmse_to_txt(savePath):
+    with open(savePath, 'w') as fp:
+        for item in RMSE_VALUES:
+            # write each item on a new line
+            fp.write("%s\n" % item)
 
 
 # funkcja wizualizująca przewidywane dane
@@ -102,12 +153,13 @@ def visualize_predicted_data(train, valid, save_to_files, count, current_stock_n
         plt.plot(valid[['Close', 'Predictions']])
         plt.legend(['Train', 'Val', 'Predictions'], loc='lower right')
         if save_to_files:
-            file_name = "graph" + str(count) + ".png"
+            file_name = "graphs/graph" + str(count) + ".png"
             plt.savefig(file_name)
             count += 1
         return count
     except Exception as e:
         print(f'Exception message: {e}')
+        return count
 
 
 # pobieranie danych z wykorzystaniem API z Yahoo Finances
@@ -138,17 +190,17 @@ def show_graphs(input_data_frame, save_to_files, count):
         input_data_frame = input_data_frame.Close
         input_data_frame.plot()
         if save_to_files:
-            file_name = "graph" + str(count) + ".png"
+            file_name = "graphs/graph" + str(count) + ".png"
             plt.savefig(file_name)
             count += 1
         input_data_frame.plot.box()
         if save_to_files:
-            file_name = "graph" + str(count) + ".png"
+            file_name = "graphs/graph" + str(count) + ".png"
             plt.savefig(file_name)
             count += 1
         input_data_frame.plot.area(stacked=False)
         if save_to_files:
-            file_name = "graph" + str(count) + ".png"
+            file_name = "graphs/graph" + str(count) + ".png"
             plt.savefig(file_name)
             count += 1
         plt.legend(loc='lower right')
@@ -163,9 +215,12 @@ def main():
     stocks = get_stock_data_from_file(config['stockFilePath'])
     counter = 0
     data_frame = get_data_from_yahoo(stocks)
+    # zapisanie do pliku CSV
+    data_frame.to_csv("stock.csv")
     # Przygotowywanie wizualizacji pobranych danych
     counter = show_graphs(data_frame, bool(config['performGraphSave']), counter)
     for stock in stocks:
+        CURRENT_STOCK = stock
         data_frame = get_data_from_yahoo(stock)
         # Wizualizacja przewidywanego zachowania giełdy na 60 dni do przodu
         train, valid = predict_stock_moves_ML(data_frame)
@@ -173,6 +228,7 @@ def main():
         # Wyświetlenie wykresów
         plt.show()
         counter += 1
+    save_rmse_to_txt(config['rmseFileName'])
 
 
 if __name__ == "__main__":

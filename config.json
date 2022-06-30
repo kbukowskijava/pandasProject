@@ -1,1 +1,7 @@
-{"performGraphSave": "True", "stockFilePath": "stock_names.txt", "model_path": "trained_model"}
+{
+  "performGraphSave": "True",
+  "stockFilePath": "stock_names.txt",
+  "model_path": "trained_model",
+  "confusionMatrixSavePath" : "confusion_matrix_xlsx/",
+  "rmseFileName" : "RMSE_VALUES.txt"
+}
