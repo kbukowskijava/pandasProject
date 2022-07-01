@@ -1,10 +1,22 @@
+#################################################################
+# Opis:
+# Następujący program:
+# przetwarza zaciągnięte dane oraz pokazuje podstawowe statystyki
+# wykorzystuje: funkcje wbudowane, funkcje własne, listy, słowniki, wykresy liniowe, histogram, box
+# wykorzystuje uczenie maszynowe do przewidywania zachowania giełdy Aby dane były jakkolwiek poprawnie przewidywane, niezbędne będzie pobranie wartości akcji sprzed minimum dwóchch lat!
+# oblicza RMSE (oraz zapisuje do pliku .txt)
+# tworzy macierz confusion_matrix i umożliwia zapisanie jej do pliku .xlsx - oczywiście, jeśli nie przekroczy ona dozwolonej wielkości skoroszytu
+# tworzy plik stock.csv z pobranymi z Yahoo danymi o giełdzie
+# przewiduje zachowanie giełdy dla akcji przechowywanych w pliku stock_names.txt
+# posiada plik konfiguracyjny config.json
+##################################################################
+
 # aby dane były jakkolwiek poprawnie przewidywane, niezbędne będzie pobranie wartości akcji sprzed minimum dwóch lat!
 # importowanie niezbędnych bibliotek
 import datetime as dt
 import json
 import math
 import os
-
 import absl.logging
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +28,7 @@ from keras.models import Sequential
 from pandas_datareader._utils import RemoteDataError
 from sklearn.preprocessing import MinMaxScaler
 
+# zmienne globalne
 CURRENT_STOCK = ""
 RMSE_VALUES = []
 
@@ -23,6 +36,7 @@ RMSE_VALUES = []
 absl.logging.set_verbosity(absl.logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# ustawienia globalne wykresów
 plt.style.use('fivethirtyeight')
 plt.rcParams['font.size'] = 8
 
@@ -42,7 +56,7 @@ with open(json_file_path) as json_file:
 # możliwe jest też odczytanie z pliku z wykorzystaniem przygotowanej funkcji get_stock_data_from_file(file_path)
 
 # funkcja wykorzystująca biblioteki tensorflow do utworzenia modelu ML oraz przewidywanie
-def predict_stock_moves_ML(stock_input_array):
+def predict_stock_moves_ML(stock_input_array, current_stock=CURRENT_STOCK):
     try:
         # możliwe jest przekazanie tylko jednej akcji na raz!!!
         data = stock_input_array.filter(['Close'])  # filtrowanie data frame w celu uzyskania tylko kolumny Close
@@ -92,7 +106,7 @@ def predict_stock_moves_ML(stock_input_array):
         predictions = scaler.inverse_transform(predictions)
         # uzyskiwanie RMSE - Root Mean Square Error (jest standardowym sposobem pomiaru błędu modelu w przewidywaniu danych ilościowych)
         RMSE = np.sqrt(np.mean(predictions - y_test) ** 2)
-        RMSE_VALUES.append(str("RMSE dla " + CURRENT_STOCK + " = " + str(RMSE)))
+        RMSE_VALUES.append(str("RMSE dla " + current_stock + " = " + str(RMSE)))
         print(f"Współczynnik RMSE wynosi: {RMSE}")
         list_of_y_test = y_test.tolist()
         list_of_predictions = predictions.tolist()
@@ -106,40 +120,60 @@ def predict_stock_moves_ML(stock_input_array):
         print(f'Exception message: {e}')
 
 
+# z racji tego, iż wbudowana funkcja do obliczania macierzy confusion wymaga jednowymiarowego wektora lub listy, należy spłaszczyć argumenty wejściowe tzn. zamienić listę list na listę
 def flatten_list(list_to_flatten):
-    flat_list = []
-    # Iteracja po każdym elemencie głównej listy
-    for element in list_to_flatten:
-        if type(element) is list:
-            # Jeśli element jest listą iteruj po elementach tego elementu
-            for item in element:
-                flat_list.append(item)
-        else:
-            flat_list.append(element)
-    return flat_list
+    try:
+        flat_list = []
+        # Iteracja po każdym elemencie głównej listy
+        for element in list_to_flatten:
+            if type(element) is list:
+                # Jeśli element jest listą iteruj po elementach tego elementu
+                for item in element:
+                    flat_list.append(item)
+            else:
+                flat_list.append(element)
+        return flat_list
+    except Exception as e:
+        print(f'Exception message: {e}')
 
 
+# funkcja wypisująca na konsoli TP/FP/FN/TN oraz obliczająca RECALL
 def print_confusion_matrix(y_true, y_pred):
-    cm = tf.math.confusion_matrix(y_true, y_pred)
-    cm_temp = [cm[0][0], cm[0][1], cm[1][0], cm[1][1]]
-    save_matrix_to_xlsx(cm_temp, config['confusionMatrixSavePath'])
-    print('True positive = ', cm[0][0])
-    print('False positive = ', cm[0][1])
-    print('False negative = ', cm[1][0])
-    print('True negative = ', cm[1][1])
+    try:
+        y_pred = tf.argmax(y_pred, axis=-1)
+        y_true = tf.argmax(y_true, axis=-1)
+        cm = tf.math.confusion_matrix(tf.reshape(y_true, [-1]), tf.reshape(y_pred, [-1]))
+        cm_temp = [cm[0][0], cm[0][1], cm[1][0], cm[1][1]]
+        save_matrix_to_xlsx(cm_temp, config['confusionMatrixSavePath'])
+        print('True positive = ', cm[0][0])
+        print('False positive = ', cm[0][1])
+        print('False negative = ', cm[1][0])
+        print('True negative = ', cm[1][1])
+        # recall = tp/(tp+fn)
+        print('Recall =', cm[0][0] / (cm[0][0] + cm[1][0]))
+        return (cm[0][0], cm[0][1], cm[1][0], cm[1][1])
+    except Exception as e:
+        print(f'Exception message: {e}')
 
 
-def save_matrix_to_xlsx(matrix, savePath):
-    df = pd.DataFrame(matrix).T
-    df.to_excel(excel_writer=str(savePath + CURRENT_STOCK + "_CM.xlsx"))
+# funkcja zapisująca macierz 1D do pliku xlsx. Wykorzystane do przechowywania confusion_matrix w pliku
+def save_matrix_to_xlsx(matrix, savePath, current_stock=CURRENT_STOCK):
+    try:
+        df = pd.DataFrame(matrix).T
+        df.to_excel(excel_writer=str(savePath + current_stock + "_CM.xlsx"))
+    except Exception as e:
+        print(f'Exception message: {e}')
 
 
-# Zapisanie wszystkich RMSE do pliku
+# zapisanie wszystkich RMSE do pliku
 def save_rmse_to_txt(savePath):
-    with open(savePath, 'w') as fp:
-        for item in RMSE_VALUES:
-            # write each item on a new line
-            fp.write("%s\n" % item)
+    try:
+        with open(savePath, 'w') as fp:
+            for item in RMSE_VALUES:
+                # write each item on a new line
+                fp.write("%s\n" % item)
+    except Exception as e:
+        print(f'Exception message: {e}')
 
 
 # funkcja wizualizująca przewidywane dane
@@ -210,6 +244,7 @@ def show_graphs(input_data_frame, save_to_files, count):
         print(f'Exception message: {e}')
 
 
+# funkcja główna
 def main():
     # pobieranie danych z Yahoo Finances
     stocks = get_stock_data_from_file(config['stockFilePath'])
